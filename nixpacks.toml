@@ -3,7 +3,7 @@ nixPkgs = ["python312", "nodejs_20", "yarn"]
 
 [phases.install]
 cmds = [
-  "pip install -r backend/requirements.txt",
+  "python3 -m pip install -r backend/requirements.txt",
   "cd frontend && yarn install"
 ]
 
