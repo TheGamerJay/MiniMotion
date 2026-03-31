@@ -98,6 +98,14 @@ Build Mini Editor - a web-based 2D sticker animation editor for short looping re
 - **Multi-Select Keyframes**: Shift+Click to select multiple keyframes
 - **Onion Skin Preview**: Toggle to see previous/next frame positions
 
+### Phase 7 - Motion Behavior Helpers ✅ (March 31, 2026)
+- **Anticipation**: Adds slight opposite movement before main action
+- **Follow-through**: Overshoot and settle effect after movement
+- **Pop Effect**: Quick scale emphasis for impact
+- **Fade In/Out**: One-click opacity transitions
+- **Shake Effect**: Impact shake animation
+- **Bounce Landing**: Bouncing settle effect
+
 ## Prioritized Backlog
 
 ### P0 (Critical for MVP - DONE)
@@ -115,6 +123,7 @@ Build Mini Editor - a web-based 2D sticker animation editor for short looping re
 - [x] Duplicate + offset (trailing effects)
 - [x] Copy/paste keyframes
 - [x] Onion skin preview
+- [x] Motion helpers (anticipation, follow-through, pop, fade, shake, bounce)
 
 ### P1 (Important)
 - [ ] Undo/Redo functionality
@@ -184,6 +193,38 @@ keyframes: {
 - Toggle to visualize previous and next frame positions
 - Shows 2 frames before and after current time
 - Helps visualize motion flow and timing
+
+## Motion Helpers Details
+
+### Anticipation
+- Adds slight opposite movement before main action
+- Requires at least 2 keyframes (moves relative to previous keyframe)
+- Creates natural "wind-up" before motion
+
+### Follow-Through
+- Adds overshoot and settle keyframes after movement
+- Object goes past target then settles back
+- Creates natural deceleration and weight
+
+### Pop Effect
+- Quick scale up (125%) then back to normal
+- Used for emphasis and impact moments
+- Total duration: ~0.16s
+
+### Fade In/Out
+- One-click opacity transitions (0.3s duration)
+- Fade In: 0 → full opacity
+- Fade Out: full opacity → 0
+
+### Shake Effect
+- Horizontal shake with decreasing intensity
+- 3 shakes, total duration: ~0.24s
+- Used for impact and reactions
+
+### Bounce Landing
+- Vertical bounce with 2 decreasing bounces
+- Includes subtle squash/stretch
+- Total duration: ~0.4s
 
 ## Known Limitations
 - Desktop-first (mobile not optimized)
