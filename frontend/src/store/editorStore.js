@@ -59,6 +59,14 @@ const initialState = {
     isDirty: false,
     isSaving: false,
     isExporting: false,
+    onionSkinEnabled: false,
+    onionSkinFrames: 2,
+  },
+  
+  // Clipboard for keyframe copy/paste
+  clipboard: {
+    keyframes: null,
+    sourceLayerId: null,
   },
 };
 
@@ -82,6 +90,10 @@ const ACTIONS = {
   ADD_KEYFRAME: 'ADD_KEYFRAME',
   UPDATE_KEYFRAME: 'UPDATE_KEYFRAME',
   REMOVE_KEYFRAME: 'REMOVE_KEYFRAME',
+  SHIFT_KEYFRAMES: 'SHIFT_KEYFRAMES',
+  DUPLICATE_LAYER_WITH_OFFSET: 'DUPLICATE_LAYER_WITH_OFFSET',
+  COPY_KEYFRAMES: 'COPY_KEYFRAMES',
+  PASTE_KEYFRAMES: 'PASTE_KEYFRAMES',
   SET_CANVAS: 'SET_CANVAS',
   SET_UI: 'SET_UI',
   UNDO: 'UNDO',
@@ -290,6 +302,116 @@ function editorReducer(state, action) {
         ui: { ...state.ui, isDirty: true },
       };
     }
+    
+    case ACTIONS.SHIFT_KEYFRAMES: {
+      // Shift all keyframes of a layer by an offset (in seconds)
+      const { layerId, offset } = action.payload;
+      return {
+        ...state,
+        layers: state.layers.map(layer => {
+          if (layer.id !== layerId) return layer;
+          const oldKeyframes = layer.keyframes || {};
+          const newKeyframes = {};
+          
+          Object.keys(oldKeyframes).forEach(time => {
+            const newTime = Math.max(0, parseFloat(time) + offset);
+            // Round to 2 decimal places to avoid floating point issues
+            const roundedTime = Math.round(newTime * 100) / 100;
+            newKeyframes[roundedTime] = oldKeyframes[time];
+          });
+          
+          return { ...layer, keyframes: newKeyframes };
+        }),
+        ui: { ...state.ui, isDirty: true },
+      };
+    }
+    
+    case ACTIONS.DUPLICATE_LAYER_WITH_OFFSET: {
+      // Duplicate a layer and offset its keyframes
+      const { layerId, timeOffset } = action.payload;
+      const sourceLayer = state.layers.find(l => l.id === layerId);
+      if (!sourceLayer) return state;
+      
+      const oldKeyframes = sourceLayer.keyframes || {};
+      const newKeyframes = {};
+      
+      Object.keys(oldKeyframes).forEach(time => {
+        const newTime = Math.max(0, parseFloat(time) + timeOffset);
+        const roundedTime = Math.round(newTime * 100) / 100;
+        newKeyframes[roundedTime] = { ...oldKeyframes[time] };
+      });
+      
+      const newLayer = {
+        ...sourceLayer,
+        id: uuidv4(),
+        name: `${sourceLayer.name} (trail)`,
+        keyframes: newKeyframes,
+      };
+      
+      return {
+        ...state,
+        layers: [...state.layers, newLayer],
+        selectedLayerId: newLayer.id,
+        ui: { ...state.ui, isDirty: true },
+      };
+    }
+    
+    case ACTIONS.COPY_KEYFRAMES: {
+      // Copy keyframes from a layer to clipboard
+      const { layerId, keyframeTimes } = action.payload;
+      const layer = state.layers.find(l => l.id === layerId);
+      if (!layer) return state;
+      
+      const copiedKeyframes = {};
+      keyframeTimes.forEach(time => {
+        if (layer.keyframes && layer.keyframes[time]) {
+          copiedKeyframes[time] = { ...layer.keyframes[time] };
+        }
+      });
+      
+      return {
+        ...state,
+        clipboard: {
+          keyframes: copiedKeyframes,
+          sourceLayerId: layerId,
+        },
+      };
+    }
+    
+    case ACTIONS.PASTE_KEYFRAMES: {
+      // Paste keyframes at a new time offset
+      const { layerId, timeOffset } = action.payload;
+      if (!state.clipboard.keyframes) return state;
+      
+      const copiedKeyframes = state.clipboard.keyframes;
+      const times = Object.keys(copiedKeyframes).map(Number).sort((a, b) => a - b);
+      if (times.length === 0) return state;
+      
+      const firstTime = times[0];
+      const newKeyframes = {};
+      
+      times.forEach(time => {
+        const relativeTime = time - firstTime;
+        const newTime = Math.max(0, timeOffset + relativeTime);
+        const roundedTime = Math.round(newTime * 100) / 100;
+        newKeyframes[roundedTime] = { ...copiedKeyframes[time] };
+      });
+      
+      return {
+        ...state,
+        layers: state.layers.map(layer => {
+          if (layer.id !== layerId) return layer;
+          return {
+            ...layer,
+            keyframes: {
+              ...layer.keyframes,
+              ...newKeyframes,
+            },
+          };
+        }),
+        ui: { ...state.ui, isDirty: true },
+      };
+    }
       
     case ACTIONS.SET_CANVAS:
       return {
@@ -384,6 +506,22 @@ export function EditorProvider({ children }) {
     
     removeKeyframe: useCallback((layerId, time) => {
       dispatch({ type: ACTIONS.REMOVE_KEYFRAME, payload: { layerId, time } });
+    }, []),
+    
+    shiftKeyframes: useCallback((layerId, offset) => {
+      dispatch({ type: ACTIONS.SHIFT_KEYFRAMES, payload: { layerId, offset } });
+    }, []),
+    
+    duplicateLayerWithOffset: useCallback((layerId, timeOffset) => {
+      dispatch({ type: ACTIONS.DUPLICATE_LAYER_WITH_OFFSET, payload: { layerId, timeOffset } });
+    }, []),
+    
+    copyKeyframes: useCallback((layerId, keyframeTimes) => {
+      dispatch({ type: ACTIONS.COPY_KEYFRAMES, payload: { layerId, keyframeTimes } });
+    }, []),
+    
+    pasteKeyframes: useCallback((layerId, timeOffset) => {
+      dispatch({ type: ACTIONS.PASTE_KEYFRAMES, payload: { layerId, timeOffset } });
     }, []),
     
     setCanvas: useCallback((updates) => {

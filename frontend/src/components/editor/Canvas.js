@@ -1,8 +1,42 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { Stage, Layer, Image, Transformer, Circle, Line, Rect } from 'react-konva';
 import { useEditor } from '../../store/editorStore';
 import { extractPolygonRegion } from '../../utils/cutTool';
 import { getInterpolatedProperties } from '../../utils/animation';
+
+// Onion skin ghost layer - shows previous/next frame positions
+function OnionSkinLayer({ layer, time, opacity, tint }) {
+  const [image, setImage] = useState(null);
+
+  useEffect(() => {
+    if (layer.imageData) {
+      const img = new window.Image();
+      img.onload = () => setImage(img);
+      img.src = layer.imageData;
+    }
+  }, [layer.imageData]);
+
+  const props = getInterpolatedProperties(layer, time);
+
+  if (!image || !layer.visible) return null;
+
+  // Use simple opacity-based visualization (red/blue tint would need canvas manipulation)
+  // Past frames are slightly red, future frames are slightly blue via CSS on the container
+  return (
+    <Image
+      image={image}
+      x={props.x}
+      y={props.y}
+      offsetX={layer.width / 2 + layer.pivotX}
+      offsetY={layer.height / 2 + layer.pivotY}
+      rotation={props.rotation}
+      scaleX={props.scaleX}
+      scaleY={props.scaleY}
+      opacity={opacity * props.opacity}
+      listening={false}
+    />
+  );
+}
 
 function LayerImage({ layer, isSelected, onSelect, onTransform, currentTime }) {
   const imageRef = useRef(null);
@@ -346,6 +380,48 @@ export default function Canvas() {
           clipWidth={state.project.canvasSize.width}
           clipHeight={state.project.canvasSize.height}
         >
+          {/* Onion skin - past frames (red tint) */}
+          {state.ui.onionSkinEnabled && state.layers.map(layer => {
+            const frameStep = 1 / state.project.fps;
+            const pastFrames = [];
+            for (let i = 1; i <= (state.ui.onionSkinFrames || 2); i++) {
+              const pastTime = state.timeline.currentTime - (i * frameStep);
+              if (pastTime >= 0) {
+                pastFrames.push(
+                  <OnionSkinLayer
+                    key={`onion-past-${layer.id}-${i}`}
+                    layer={layer}
+                    time={pastTime}
+                    opacity={0.25 / i}
+                    tint="past"
+                  />
+                );
+              }
+            }
+            return pastFrames;
+          })}
+          
+          {/* Onion skin - future frames (blue tint) */}
+          {state.ui.onionSkinEnabled && state.layers.map(layer => {
+            const frameStep = 1 / state.project.fps;
+            const futureFrames = [];
+            for (let i = 1; i <= (state.ui.onionSkinFrames || 2); i++) {
+              const futureTime = state.timeline.currentTime + (i * frameStep);
+              if (futureTime <= state.project.duration) {
+                futureFrames.push(
+                  <OnionSkinLayer
+                    key={`onion-future-${layer.id}-${i}`}
+                    layer={layer}
+                    time={futureTime}
+                    opacity={0.25 / i}
+                    tint="future"
+                  />
+                );
+              }
+            }
+            return futureFrames;
+          })}
+
           {/* Render layers */}
           {state.layers.map(layer => (
             <LayerImage

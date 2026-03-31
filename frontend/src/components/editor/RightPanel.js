@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useEditor } from '../../store/editorStore';
 import { EASING_TYPES, EASING_LABELS, PRIMARY_EASINGS, getDefaultEasing } from '../../utils/animation';
-import { RotateCcw, Plus, Copy } from 'lucide-react';
+import { RotateCcw, Plus, Copy, Clock, Layers, ChevronLeft, ChevronRight } from 'lucide-react';
 
 export default function RightPanel() {
   const { state, actions } = useEditor();
+  const [delayAmount, setDelayAmount] = useState(0.1);
+  const [trailOffset, setTrailOffset] = useState(0.1);
   
   const selectedLayer = state.layers.find(l => l.id === state.selectedLayerId);
 
@@ -37,6 +39,36 @@ export default function RightPanel() {
   const handleDuplicateLayer = () => {
     if (!selectedLayer) return;
     actions.duplicateLayer(selectedLayer.id);
+  };
+
+  // Shift all keyframes forward/backward in time
+  const handleShiftKeyframes = (direction) => {
+    if (!selectedLayer || keyframeCount === 0) return;
+    const offset = direction * delayAmount;
+    actions.shiftKeyframes(selectedLayer.id, offset);
+  };
+
+  // Duplicate layer with time offset for trailing effects
+  const handleDuplicateWithOffset = () => {
+    if (!selectedLayer) return;
+    actions.duplicateLayerWithOffset(selectedLayer.id, trailOffset);
+  };
+
+  // Copy all keyframes
+  const handleCopyKeyframes = () => {
+    if (!selectedLayer || keyframeCount === 0) return;
+    actions.copyKeyframes(selectedLayer.id, keyframeTimes);
+  };
+
+  // Paste keyframes at current time
+  const handlePasteKeyframes = () => {
+    if (!selectedLayer || !state.clipboard.keyframes) return;
+    actions.pasteKeyframes(selectedLayer.id, state.timeline.currentTime);
+  };
+
+  // Toggle onion skin
+  const handleToggleOnionSkin = () => {
+    actions.setUI({ onionSkinEnabled: !state.ui.onionSkinEnabled });
   };
 
   // Get keyframe count and easing info
@@ -249,7 +281,7 @@ export default function RightPanel() {
           </div>
 
           {/* Duplicate Layer */}
-          <div className="p-4">
+          <div className="p-4 border-b border-zinc-800">
             <button
               onClick={handleDuplicateLayer}
               className="w-full px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-md transition-colors flex items-center justify-center gap-2"
@@ -257,6 +289,133 @@ export default function RightPanel() {
             >
               <Copy size={16} />
               Duplicate Layer
+            </button>
+          </div>
+
+          {/* Animation Timing Controls */}
+          <div className="p-4 border-b border-zinc-800">
+            <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3 flex items-center gap-1">
+              <Clock size={12} />
+              Timing Controls
+            </h2>
+            
+            {keyframeCount > 0 ? (
+              <div className="space-y-3">
+                {/* Delay/Shift Keyframes */}
+                <div>
+                  <label className="text-xs text-zinc-400 mb-1 block">Shift Keyframes</label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleShiftKeyframes(-1)}
+                      className="p-1.5 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-400 hover:text-white transition-colors"
+                      title="Shift earlier"
+                      data-testid="shift-keyframes-left"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <input
+                      type="number"
+                      step="0.05"
+                      min="0.01"
+                      value={delayAmount}
+                      onChange={(e) => setDelayAmount(Math.max(0.01, parseFloat(e.target.value) || 0.1))}
+                      className="flex-1 bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-xs font-mono text-center focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/50 outline-none"
+                      data-testid="delay-amount-input"
+                    />
+                    <button
+                      onClick={() => handleShiftKeyframes(1)}
+                      className="p-1.5 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-400 hover:text-white transition-colors"
+                      title="Shift later"
+                      data-testid="shift-keyframes-right"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-zinc-600 mt-1">
+                    Shift all keyframes by {delayAmount}s
+                  </p>
+                </div>
+
+                {/* Copy/Paste Keyframes */}
+                <div>
+                  <label className="text-xs text-zinc-400 mb-1 block">Copy / Paste</label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleCopyKeyframes}
+                      className="flex-1 px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-xs text-white rounded transition-colors"
+                      data-testid="copy-keyframes-btn"
+                    >
+                      Copy All
+                    </button>
+                    <button
+                      onClick={handlePasteKeyframes}
+                      disabled={!state.clipboard.keyframes}
+                      className="flex-1 px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-xs text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      data-testid="paste-keyframes-btn"
+                    >
+                      Paste at {state.timeline.currentTime.toFixed(2)}s
+                    </button>
+                  </div>
+                  {state.clipboard.keyframes && (
+                    <p className="text-[10px] text-cyan-400 mt-1">
+                      {Object.keys(state.clipboard.keyframes).length} keyframe(s) in clipboard
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-zinc-600">Add keyframes to use timing controls</p>
+            )}
+          </div>
+
+          {/* Trail / Stagger Effect */}
+          <div className="p-4 border-b border-zinc-800">
+            <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3 flex items-center gap-1">
+              <Layers size={12} />
+              Trail Effect
+            </h2>
+            
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-zinc-400">Offset:</span>
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0.01"
+                  value={trailOffset}
+                  onChange={(e) => setTrailOffset(Math.max(0.01, parseFloat(e.target.value) || 0.1))}
+                  className="w-20 bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs font-mono focus:border-cyan-500 outline-none"
+                  data-testid="trail-offset-input"
+                />
+                <span className="text-xs text-zinc-500">sec</span>
+              </div>
+              
+              <button
+                onClick={handleDuplicateWithOffset}
+                className="w-full px-3 py-2 bg-violet-600/80 hover:bg-violet-600 text-white text-sm rounded-md transition-colors flex items-center justify-center gap-2"
+                data-testid="duplicate-with-offset-btn"
+              >
+                <Layers size={14} />
+                Duplicate + Offset {trailOffset}s
+              </button>
+              <p className="text-[10px] text-zinc-600">
+                Creates trailing motion by duplicating with delayed keyframes
+              </p>
+            </div>
+          </div>
+
+          {/* Onion Skin Toggle */}
+          <div className="p-4">
+            <button
+              onClick={handleToggleOnionSkin}
+              className={`w-full px-3 py-2 rounded-md transition-colors flex items-center justify-center gap-2 ${
+                state.ui.onionSkinEnabled
+                  ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
+                  : 'bg-zinc-800 hover:bg-zinc-700 text-white'
+              }`}
+              data-testid="onion-skin-toggle"
+            >
+              Onion Skin {state.ui.onionSkinEnabled ? 'On' : 'Off'}
             </button>
           </div>
         </>

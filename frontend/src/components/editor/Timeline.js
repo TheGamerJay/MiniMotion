@@ -1,7 +1,7 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useEditor } from '../../store/editorStore';
 import { EASING_TYPES, EASING_LABELS, PRIMARY_EASINGS } from '../../utils/animation';
-import { Play, Pause, RotateCcw, Repeat, Repeat1 } from 'lucide-react';
+import { Play, Pause, RotateCcw, Repeat, Repeat1, Copy, ClipboardPaste } from 'lucide-react';
 
 export default function Timeline() {
   const { state, actions } = useEditor();
@@ -12,6 +12,7 @@ export default function Timeline() {
   const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
   const [draggingKeyframe, setDraggingKeyframe] = useState(null);
   const [selectedKeyframe, setSelectedKeyframe] = useState(null);
+  const [selectedKeyframes, setSelectedKeyframes] = useState([]); // Multi-select for copy
 
   const { duration, fps } = state.project;
   const { currentTime, isPlaying, loop } = state.timeline;
@@ -19,6 +20,19 @@ export default function Timeline() {
   // Calculate pixels per second for timeline scale
   const pixelsPerSecond = 100;
   const timelineWidth = duration * pixelsPerSecond;
+
+  // Calculate layer timing info for visualization
+  const layerTimingInfo = useMemo(() => {
+    return state.layers.map(layer => {
+      const times = Object.keys(layer.keyframes || {}).map(Number).sort((a, b) => a - b);
+      if (times.length === 0) return { firstKeyframe: null, lastKeyframe: null, duration: 0 };
+      return {
+        firstKeyframe: times[0],
+        lastKeyframe: times[times.length - 1],
+        duration: times[times.length - 1] - times[0],
+      };
+    });
+  }, [state.layers]);
 
   // Improved animation loop with fixed timestep for consistent FPS
   useEffect(() => {
@@ -168,9 +182,23 @@ export default function Timeline() {
 
   const handleKeyframeClick = (e, layerId, time) => {
     e.stopPropagation();
-    actions.setTimeline({ currentTime: parseFloat(time) });
+    const timeFloat = parseFloat(time);
+    actions.setTimeline({ currentTime: timeFloat });
     actions.selectLayer(layerId);
-    setSelectedKeyframe({ layerId, time: parseFloat(time) });
+    setSelectedKeyframe({ layerId, time: timeFloat });
+    
+    // Multi-select with Shift key
+    if (e.shiftKey) {
+      setSelectedKeyframes(prev => {
+        const existing = prev.find(k => k.layerId === layerId && k.time === timeFloat);
+        if (existing) {
+          return prev.filter(k => !(k.layerId === layerId && k.time === timeFloat));
+        }
+        return [...prev, { layerId, time: timeFloat }];
+      });
+    } else {
+      setSelectedKeyframes([{ layerId, time: timeFloat }]);
+    }
   };
 
   const handleKeyframeDoubleClick = (e, layerId, time) => {
@@ -178,7 +206,29 @@ export default function Timeline() {
     if (window.confirm('Delete this keyframe?')) {
       actions.removeKeyframe(layerId, parseFloat(time));
       setSelectedKeyframe(null);
+      setSelectedKeyframes([]);
     }
+  };
+
+  // Copy selected keyframes
+  const handleCopySelected = () => {
+    if (selectedKeyframes.length === 0 && selectedKeyframe) {
+      // Copy single keyframe
+      actions.copyKeyframes(selectedKeyframe.layerId, [selectedKeyframe.time]);
+    } else if (selectedKeyframes.length > 0) {
+      // Copy multiple keyframes from same layer
+      const layerId = selectedKeyframes[0].layerId;
+      const times = selectedKeyframes
+        .filter(k => k.layerId === layerId)
+        .map(k => k.time);
+      actions.copyKeyframes(layerId, times);
+    }
+  };
+
+  // Paste keyframes at current time
+  const handlePasteAtPlayhead = () => {
+    if (!state.clipboard.keyframes || !state.selectedLayerId) return;
+    actions.pasteKeyframes(state.selectedLayerId, currentTime);
   };
 
   const handleEasingChange = (layerId, time, newEasing) => {
@@ -274,6 +324,26 @@ export default function Timeline() {
                 </option>
               ))}
             </select>
+            
+            {/* Copy/Paste buttons */}
+            <div className="h-4 w-px bg-zinc-700 mx-2" />
+            <button
+              onClick={handleCopySelected}
+              className="p-1.5 hover:bg-zinc-800 rounded text-zinc-400 hover:text-cyan-400 transition-colors"
+              title="Copy Keyframes (Ctrl+C)"
+              data-testid="copy-keyframes-timeline"
+            >
+              <Copy size={14} />
+            </button>
+            <button
+              onClick={handlePasteAtPlayhead}
+              disabled={!state.clipboard.keyframes}
+              className="p-1.5 hover:bg-zinc-800 rounded text-zinc-400 hover:text-cyan-400 transition-colors disabled:opacity-50"
+              title="Paste at Playhead (Ctrl+V)"
+              data-testid="paste-keyframes-timeline"
+            >
+              <ClipboardPaste size={14} />
+            </button>
           </>
         )}
       </div>
@@ -338,7 +408,12 @@ export default function Timeline() {
             style={{ width: timelineWidth, minHeight: '100%' }}
           >
             {/* Layer tracks */}
-            {[...state.layers].reverse().map(layer => (
+            {[...state.layers].reverse().map((layer, reversedIndex) => {
+              const layerIndex = state.layers.length - 1 - reversedIndex;
+              const timing = layerTimingInfo[layerIndex];
+              const keyframeTimes = Object.keys(layer.keyframes || {}).map(Number).sort((a, b) => a - b);
+              
+              return (
               <div
                 key={layer.id}
                 className={`h-8 border-b border-zinc-800/50 relative ${
@@ -348,10 +423,43 @@ export default function Timeline() {
                 }`}
                 data-testid={`timeline-track-${layer.id}`}
               >
+                {/* Activity span indicator - shows where animation is active */}
+                {timing.firstKeyframe !== null && timing.duration > 0 && (
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 h-1 bg-violet-500/30 rounded-full"
+                    style={{
+                      left: timing.firstKeyframe * pixelsPerSecond,
+                      width: timing.duration * pixelsPerSecond,
+                    }}
+                  />
+                )}
+                
+                {/* Connection lines between keyframes */}
+                {keyframeTimes.length > 1 && keyframeTimes.slice(0, -1).map((time, i) => {
+                  const nextTime = keyframeTimes[i + 1];
+                  const nextKeyframe = layer.keyframes[nextTime];
+                  const easing = nextKeyframe?.easing || EASING_TYPES.LINEAR;
+                  const hasEasing = easing !== EASING_TYPES.LINEAR;
+                  
+                  return (
+                    <div
+                      key={`conn-${time}-${nextTime}`}
+                      className={`absolute top-1/2 h-px ${hasEasing ? 'bg-cyan-500/40' : 'bg-zinc-600/40'}`}
+                      style={{
+                        left: time * pixelsPerSecond,
+                        width: (nextTime - time) * pixelsPerSecond,
+                      }}
+                    />
+                  );
+                })}
+
                 {/* Keyframes */}
                 {Object.keys(layer.keyframes || {}).map(time => {
                   const isSelected = selectedKeyframe?.layerId === layer.id && 
                                     selectedKeyframe?.time === parseFloat(time);
+                  const isMultiSelected = selectedKeyframes.some(
+                    k => k.layerId === layer.id && k.time === parseFloat(time)
+                  );
                   const easing = getKeyframeEasing(layer, time);
                   const hasEasing = easing !== EASING_TYPES.LINEAR;
                   
@@ -359,13 +467,13 @@ export default function Timeline() {
                     <div
                       key={time}
                       className={`absolute top-1/2 -translate-y-1/2 cursor-pointer transition-transform ${
-                        isSelected ? 'scale-150 z-20' : 'hover:scale-125'
+                        isSelected ? 'scale-150 z-20' : isMultiSelected ? 'scale-125 z-10' : 'hover:scale-125'
                       }`}
                       style={{ left: parseFloat(time) * pixelsPerSecond - 5 }}
                       onClick={(e) => handleKeyframeClick(e, layer.id, time)}
                       onDoubleClick={(e) => handleKeyframeDoubleClick(e, layer.id, time)}
                       onMouseDown={(e) => handleKeyframeMouseDown(e, layer.id, time)}
-                      title={`${time}s - ${EASING_LABELS[easing]}\nDrag to move, Double-click to delete`}
+                      title={`${time}s - ${EASING_LABELS[easing]}\nShift+Click to multi-select\nDrag to move, Double-click to delete`}
                       data-testid={`keyframe-${layer.id}-${time}`}
                     >
                       {/* Keyframe diamond */}
@@ -373,9 +481,11 @@ export default function Timeline() {
                         className={`w-2.5 h-2.5 keyframe-diamond ${
                           isSelected 
                             ? 'bg-cyan-400' 
-                            : hasEasing 
-                              ? 'bg-violet-400' 
-                              : 'bg-violet-500'
+                            : isMultiSelected
+                              ? 'bg-cyan-300'
+                              : hasEasing 
+                                ? 'bg-violet-400' 
+                                : 'bg-violet-500'
                         }`}
                       />
                       {/* Easing indicator dot */}
@@ -386,7 +496,8 @@ export default function Timeline() {
                   );
                 })}
               </div>
-            ))}
+              );
+            })}
 
             {/* Empty state tracks placeholder */}
             {state.layers.length === 0 && (
