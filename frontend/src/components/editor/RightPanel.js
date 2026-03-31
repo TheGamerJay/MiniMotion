@@ -1,7 +1,18 @@
 import React, { useState } from 'react';
 import { useEditor } from '../../store/editorStore';
 import { EASING_TYPES, EASING_LABELS, PRIMARY_EASINGS, getDefaultEasing } from '../../utils/animation';
-import { RotateCcw, Plus, Copy, Clock, Layers, ChevronLeft, ChevronRight } from 'lucide-react';
+import { 
+  calculateAnticipation, 
+  calculateFollowThrough, 
+  calculatePopEffect,
+  calculateFadeIn,
+  calculateFadeOut,
+  calculateShake,
+  calculateBounceLanding,
+  getLayerProps,
+  MOTION_PRESETS
+} from '../../utils/motionHelpers';
+import { RotateCcw, Plus, Copy, Clock, Layers, ChevronLeft, ChevronRight, Sparkles, Zap, Eye, EyeOff, ArrowRight, Target } from 'lucide-react';
 
 export default function RightPanel() {
   const { state, actions } = useEditor();
@@ -69,6 +80,160 @@ export default function RightPanel() {
   // Toggle onion skin
   const handleToggleOnionSkin = () => {
     actions.setUI({ onionSkinEnabled: !state.ui.onionSkinEnabled });
+  };
+
+  // ========== MOTION HELPERS ==========
+  
+  // Add anticipation before current keyframe
+  const handleAddAnticipation = () => {
+    if (!selectedLayer || keyframeCount < 2) return;
+    
+    const currentTime = state.timeline.currentTime;
+    const nearestKeyframeTime = keyframeTimes.find(t => Math.abs(t - currentTime) < 0.05) || currentTime;
+    const keyframeIndex = keyframeTimes.indexOf(nearestKeyframeTime);
+    
+    if (keyframeIndex <= 0) return; // Need a previous keyframe
+    
+    const prevTime = keyframeTimes[keyframeIndex - 1];
+    const prevKeyframe = selectedLayer.keyframes[prevTime];
+    const currentKeyframe = selectedLayer.keyframes[nearestKeyframeTime];
+    
+    if (!prevKeyframe || !currentKeyframe) return;
+    
+    // Calculate anticipation (slight opposite movement)
+    const anticipationProps = calculateAnticipation(prevKeyframe, currentKeyframe, 0.15);
+    
+    // Insert anticipation keyframe between prev and current
+    const anticipationTime = Math.round((nearestKeyframeTime - 0.08) * 100) / 100;
+    if (anticipationTime > prevTime) {
+      actions.addKeyframe(selectedLayer.id, anticipationTime, anticipationProps);
+    }
+  };
+
+  // Add follow-through after current keyframe
+  const handleAddFollowThrough = () => {
+    if (!selectedLayer || keyframeCount < 1) return;
+    
+    const currentTime = state.timeline.currentTime;
+    const nearestKeyframeTime = keyframeTimes.find(t => Math.abs(t - currentTime) < 0.05);
+    
+    if (nearestKeyframeTime === undefined) return;
+    
+    const keyframeIndex = keyframeTimes.indexOf(nearestKeyframeTime);
+    const currentKeyframe = selectedLayer.keyframes[nearestKeyframeTime];
+    
+    // Get previous keyframe for direction calculation
+    let prevKeyframe = getLayerProps(selectedLayer);
+    if (keyframeIndex > 0) {
+      prevKeyframe = selectedLayer.keyframes[keyframeTimes[keyframeIndex - 1]];
+    }
+    
+    // Calculate follow-through
+    const { overshoot, settle } = calculateFollowThrough(currentKeyframe, prevKeyframe, 0.12);
+    
+    // Insert overshoot and settle keyframes
+    const overshootTime = Math.round((nearestKeyframeTime + 0.08) * 100) / 100;
+    const settleTime = Math.round((nearestKeyframeTime + 0.18) * 100) / 100;
+    
+    if (overshootTime <= state.project.duration) {
+      actions.addKeyframe(selectedLayer.id, overshootTime, overshoot);
+    }
+    if (settleTime <= state.project.duration) {
+      actions.addKeyframe(selectedLayer.id, settleTime, settle);
+    }
+  };
+
+  // Add pop effect at current time
+  const handleAddPopEffect = () => {
+    if (!selectedLayer) return;
+    
+    const currentTime = state.timeline.currentTime;
+    const baseProps = getLayerProps(selectedLayer);
+    
+    const { peak, settle } = calculatePopEffect(baseProps, 1.25);
+    
+    // Add start, peak, and settle keyframes
+    const startTime = Math.round(currentTime * 100) / 100;
+    const peakTime = Math.round((currentTime + 0.06) * 100) / 100;
+    const settleTime = Math.round((currentTime + 0.16) * 100) / 100;
+    
+    actions.addKeyframe(selectedLayer.id, startTime, { ...baseProps, easing: EASING_TYPES.LINEAR });
+    if (peakTime <= state.project.duration) {
+      actions.addKeyframe(selectedLayer.id, peakTime, peak);
+    }
+    if (settleTime <= state.project.duration) {
+      actions.addKeyframe(selectedLayer.id, settleTime, settle);
+    }
+  };
+
+  // Add fade in effect
+  const handleAddFadeIn = () => {
+    if (!selectedLayer) return;
+    
+    const currentTime = state.timeline.currentTime;
+    const baseProps = getLayerProps(selectedLayer);
+    const { start, end } = calculateFadeIn(baseProps);
+    
+    const startTime = Math.round(currentTime * 100) / 100;
+    const endTime = Math.round((currentTime + 0.3) * 100) / 100;
+    
+    actions.addKeyframe(selectedLayer.id, startTime, start);
+    if (endTime <= state.project.duration) {
+      actions.addKeyframe(selectedLayer.id, endTime, end);
+    }
+  };
+
+  // Add fade out effect
+  const handleAddFadeOut = () => {
+    if (!selectedLayer) return;
+    
+    const currentTime = state.timeline.currentTime;
+    const baseProps = getLayerProps(selectedLayer);
+    const { start, end } = calculateFadeOut(baseProps);
+    
+    const startTime = Math.round(currentTime * 100) / 100;
+    const endTime = Math.round((currentTime + 0.3) * 100) / 100;
+    
+    actions.addKeyframe(selectedLayer.id, startTime, start);
+    if (endTime <= state.project.duration) {
+      actions.addKeyframe(selectedLayer.id, endTime, end);
+    }
+  };
+
+  // Add shake effect
+  const handleAddShake = () => {
+    if (!selectedLayer) return;
+    
+    const currentTime = state.timeline.currentTime;
+    const baseProps = getLayerProps(selectedLayer);
+    const shakeFrames = calculateShake(baseProps, 8, 3);
+    
+    let time = currentTime;
+    shakeFrames.forEach((frame) => {
+      const roundedTime = Math.round(time * 100) / 100;
+      if (roundedTime <= state.project.duration) {
+        actions.addKeyframe(selectedLayer.id, roundedTime, frame);
+      }
+      time += 0.04;
+    });
+  };
+
+  // Add bounce landing effect
+  const handleAddBounce = () => {
+    if (!selectedLayer) return;
+    
+    const currentTime = state.timeline.currentTime;
+    const baseProps = getLayerProps(selectedLayer);
+    const bounceFrames = calculateBounceLanding(baseProps, 25, 2);
+    
+    let time = currentTime;
+    bounceFrames.forEach((frame) => {
+      const roundedTime = Math.round(time * 100) / 100;
+      if (roundedTime <= state.project.duration) {
+        actions.addKeyframe(selectedLayer.id, roundedTime, frame);
+      }
+      time += 0.08;
+    });
   };
 
   // Get keyframe count and easing info
@@ -405,7 +570,7 @@ export default function RightPanel() {
           </div>
 
           {/* Onion Skin Toggle */}
-          <div className="p-4">
+          <div className="p-4 border-b border-zinc-800">
             <button
               onClick={handleToggleOnionSkin}
               className={`w-full px-3 py-2 rounded-md transition-colors flex items-center justify-center gap-2 ${
@@ -417,6 +582,99 @@ export default function RightPanel() {
             >
               Onion Skin {state.ui.onionSkinEnabled ? 'On' : 'Off'}
             </button>
+          </div>
+
+          {/* Motion Helpers Panel */}
+          <div className="p-4">
+            <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3 flex items-center gap-1">
+              <Sparkles size={12} />
+              Motion Helpers
+            </h2>
+            
+            <div className="space-y-2">
+              {/* Anticipation & Follow-through row */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={handleAddAnticipation}
+                  disabled={keyframeCount < 2}
+                  className="px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-xs text-white rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+                  title="Add slight opposite movement before action (needs 2+ keyframes)"
+                  data-testid="motion-anticipation"
+                >
+                  <ChevronLeft size={12} />
+                  Anticipation
+                </button>
+                <button
+                  onClick={handleAddFollowThrough}
+                  disabled={keyframeCount < 1}
+                  className="px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-xs text-white rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+                  title="Add overshoot and settle after action"
+                  data-testid="motion-follow-through"
+                >
+                  Follow-thru
+                  <ChevronRight size={12} />
+                </button>
+              </div>
+              
+              {/* Pop & Shake row */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={handleAddPopEffect}
+                  className="px-2 py-1.5 bg-violet-600/60 hover:bg-violet-600/80 text-xs text-white rounded transition-colors flex items-center justify-center gap-1"
+                  title="Quick scale emphasis effect"
+                  data-testid="motion-pop"
+                >
+                  <Zap size={12} />
+                  Pop
+                </button>
+                <button
+                  onClick={handleAddShake}
+                  className="px-2 py-1.5 bg-violet-600/60 hover:bg-violet-600/80 text-xs text-white rounded transition-colors flex items-center justify-center gap-1"
+                  title="Impact shake effect"
+                  data-testid="motion-shake"
+                >
+                  <Target size={12} />
+                  Shake
+                </button>
+              </div>
+              
+              {/* Fade row */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={handleAddFadeIn}
+                  className="px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-xs text-white rounded transition-colors flex items-center justify-center gap-1"
+                  title="Fade in from transparent"
+                  data-testid="motion-fade-in"
+                >
+                  <Eye size={12} />
+                  Fade In
+                </button>
+                <button
+                  onClick={handleAddFadeOut}
+                  className="px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-xs text-white rounded transition-colors flex items-center justify-center gap-1"
+                  title="Fade out to transparent"
+                  data-testid="motion-fade-out"
+                >
+                  <EyeOff size={12} />
+                  Fade Out
+                </button>
+              </div>
+              
+              {/* Bounce */}
+              <button
+                onClick={handleAddBounce}
+                className="w-full px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-xs text-white rounded transition-colors flex items-center justify-center gap-1"
+                title="Landing with bounces"
+                data-testid="motion-bounce"
+              >
+                <ArrowRight size={12} className="rotate-90" />
+                Bounce Landing
+              </button>
+              
+              <p className="text-[10px] text-zinc-600 mt-1">
+                Adds keyframes at playhead position
+              </p>
+            </div>
           </div>
         </>
       ) : (
