@@ -90,6 +90,14 @@ Build Mini Editor - a web-based 2D sticker animation editor for short looping re
 - **Duplicate Layer**: Clone layer with all properties and keyframes
 - **Easing UI**: Dropdown selector in timeline controls
 
+### Phase 6 - Animation Composition Controls ✅ (March 31, 2026)
+- **Timeline Visualization**: Activity spans and connection lines between keyframes
+- **Shift Keyframes**: Move all keyframes forward/backward in time
+- **Duplicate + Offset**: Create trailing effects with time-offset duplicates
+- **Copy/Paste Keyframes**: Reuse motion patterns across layers
+- **Multi-Select Keyframes**: Shift+Click to select multiple keyframes
+- **Onion Skin Preview**: Toggle to see previous/next frame positions
+
 ## Prioritized Backlog
 
 ### P0 (Critical for MVP - DONE)
@@ -103,6 +111,10 @@ Build Mini Editor - a web-based 2D sticker animation editor for short looping re
 - [x] Save/Load projects
 - [x] Easing system
 - [x] Draggable keyframes
+- [x] Shift keyframes (delay control)
+- [x] Duplicate + offset (trailing effects)
+- [x] Copy/paste keyframes
+- [x] Onion skin preview
 
 ### P1 (Important)
 - [ ] Undo/Redo functionality
@@ -146,13 +158,34 @@ keyframes: {
 ```
 
 ## Next Action Items
-1. Add undo/redo functionality for transform changes
-2. Implement onion skin preview for animation
-3. Add bezier curve support to cut tool
-4. Consider advanced easing presets (bounce, elastic)
+1. Add undo/redo functionality for transform and keyframe operations
+2. Add bezier curve support to cut tool for smoother selections
+3. Add advanced easing presets (bounce, elastic, back)
+4. Add visual curve editor for custom easing
+
+## Composition Controls Details
+
+### Shift Keyframes
+- Move all keyframes of a layer forward or backward in time
+- Configurable offset amount (default 0.1s)
+- Enables delayed reactions and timing adjustments
+
+### Duplicate + Offset
+- Creates a copy of a layer with all keyframes shifted by a time offset
+- Perfect for creating trailing effects and motion overlap
+- Offset configurable (default 0.1s)
+
+### Copy/Paste Keyframes
+- Copy all keyframes from a layer
+- Paste at current playhead position on any layer
+- Maintains relative timing between keyframes
+
+### Onion Skin Preview
+- Toggle to visualize previous and next frame positions
+- Shows 2 frames before and after current time
+- Helps visualize motion flow and timing
 
 ## Known Limitations
 - Desktop-first (mobile not optimized)
 - No undo/redo yet
 - Cut tool uses basic polygon selection
-- No onion skin preview
