@@ -2,46 +2,9 @@
  * Export utilities for rendering animation frames
  */
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+import { getInterpolatedProperties } from './animation';
 
-/**
- * Interpolate between keyframes for a given property
- */
-function interpolateValue(keyframes, property, time, defaultValue) {
-  const times = Object.keys(keyframes)
-    .map(Number)
-    .sort((a, b) => a - b);
-  
-  if (times.length === 0) return defaultValue;
-  
-  if (time <= times[0]) {
-    return keyframes[times[0]]?.[property] ?? defaultValue;
-  }
-  
-  if (time >= times[times.length - 1]) {
-    return keyframes[times[times.length - 1]]?.[property] ?? defaultValue;
-  }
-  
-  let prevTime = times[0];
-  let nextTime = times[times.length - 1];
-  
-  for (let i = 0; i < times.length - 1; i++) {
-    if (time >= times[i] && time <= times[i + 1]) {
-      prevTime = times[i];
-      nextTime = times[i + 1];
-      break;
-    }
-  }
-  
-  const prevValue = keyframes[prevTime]?.[property];
-  const nextValue = keyframes[nextTime]?.[property];
-  
-  if (prevValue === undefined) return nextValue ?? defaultValue;
-  if (nextValue === undefined) return prevValue ?? defaultValue;
-  
-  const t = (time - prevTime) / (nextTime - prevTime);
-  return prevValue + (nextValue - prevValue) * t;
-}
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 /**
  * Load an image from a data URL
@@ -56,7 +19,7 @@ function loadImage(dataURL) {
 }
 
 /**
- * Render a single frame to canvas
+ * Render a single frame to canvas using the animation engine
  */
 async function renderFrame(layers, canvasSize, time) {
   const canvas = document.createElement('canvas');
@@ -74,14 +37,8 @@ async function renderFrame(layers, canvasSize, time) {
     try {
       const img = await loadImage(layer.imageData);
       
-      // Get interpolated values
-      const hasKeyframes = Object.keys(layer.keyframes || {}).length > 0;
-      const x = hasKeyframes ? interpolateValue(layer.keyframes, 'x', time, layer.x) : layer.x;
-      const y = hasKeyframes ? interpolateValue(layer.keyframes, 'y', time, layer.y) : layer.y;
-      const rotation = hasKeyframes ? interpolateValue(layer.keyframes, 'rotation', time, layer.rotation) : layer.rotation;
-      const scaleX = hasKeyframes ? interpolateValue(layer.keyframes, 'scaleX', time, layer.scaleX) : layer.scaleX;
-      const scaleY = hasKeyframes ? interpolateValue(layer.keyframes, 'scaleY', time, layer.scaleY) : layer.scaleY;
-      const opacity = hasKeyframes ? interpolateValue(layer.keyframes, 'opacity', time, layer.opacity) : layer.opacity;
+      // Get interpolated values using the animation engine (with easing)
+      const { x, y, rotation, scaleX, scaleY, opacity } = getInterpolatedProperties(layer, time);
       
       ctx.save();
       

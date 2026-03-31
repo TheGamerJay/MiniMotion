@@ -1,6 +1,7 @@
 import React from 'react';
 import { useEditor } from '../../store/editorStore';
-import { RotateCcw, Plus } from 'lucide-react';
+import { EASING_TYPES, EASING_LABELS, PRIMARY_EASINGS, getDefaultEasing } from '../../utils/animation';
+import { RotateCcw, Plus, Copy } from 'lucide-react';
 
 export default function RightPanel() {
   const { state, actions } = useEditor();
@@ -21,6 +22,7 @@ export default function RightPanel() {
     if (!selectedLayer) return;
     
     const time = state.timeline.currentTime;
+    // Use default easing (ease-out) for natural motion
     actions.addKeyframe(selectedLayer.id, time, {
       x: selectedLayer.x,
       y: selectedLayer.y,
@@ -28,8 +30,18 @@ export default function RightPanel() {
       scaleX: selectedLayer.scaleX,
       scaleY: selectedLayer.scaleY,
       opacity: selectedLayer.opacity,
+      easing: getDefaultEasing(),
     });
   };
+
+  const handleDuplicateLayer = () => {
+    if (!selectedLayer) return;
+    actions.duplicateLayer(selectedLayer.id);
+  };
+
+  // Get keyframe count and easing info
+  const keyframeCount = Object.keys(selectedLayer?.keyframes || {}).length;
+  const keyframeTimes = Object.keys(selectedLayer?.keyframes || {}).map(Number).sort((a, b) => a - b);
 
   const handleProjectSettingChange = (property, value) => {
     if (property === 'canvasWidth') {
@@ -198,7 +210,7 @@ export default function RightPanel() {
           </div>
 
           {/* Keyframe */}
-          <div className="p-4">
+          <div className="p-4 border-b border-zinc-800">
             <button
               onClick={handleAddKeyframe}
               className="w-full px-3 py-2 bg-violet-600 hover:bg-violet-500 text-white font-semibold rounded-md transition-colors flex items-center justify-center gap-2"
@@ -208,13 +220,44 @@ export default function RightPanel() {
               Add Keyframe at {state.timeline.currentTime.toFixed(2)}s
             </button>
             
-            {Object.keys(selectedLayer.keyframes || {}).length > 0 && (
-              <div className="mt-3">
+            {keyframeCount > 0 && (
+              <div className="mt-3 space-y-2">
                 <p className="text-xs text-zinc-500">
-                  {Object.keys(selectedLayer.keyframes).length} keyframe(s)
+                  {keyframeCount} keyframe{keyframeCount !== 1 ? 's' : ''}
                 </p>
+                <div className="flex flex-wrap gap-1">
+                  {keyframeTimes.map(time => {
+                    const easing = selectedLayer.keyframes[time]?.easing || EASING_TYPES.LINEAR;
+                    return (
+                      <button
+                        key={time}
+                        onClick={() => actions.setTimeline({ currentTime: time })}
+                        className={`px-2 py-0.5 text-[10px] rounded ${
+                          Math.abs(state.timeline.currentTime - time) < 0.01
+                            ? 'bg-cyan-500 text-black'
+                            : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                        }`}
+                        title={`${EASING_LABELS[easing]}`}
+                      >
+                        {time.toFixed(2)}s
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
+          </div>
+
+          {/* Duplicate Layer */}
+          <div className="p-4">
+            <button
+              onClick={handleDuplicateLayer}
+              className="w-full px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-md transition-colors flex items-center justify-center gap-2"
+              data-testid="duplicate-layer-btn"
+            >
+              <Copy size={16} />
+              Duplicate Layer
+            </button>
           </div>
         </>
       ) : (

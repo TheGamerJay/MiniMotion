@@ -2,47 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Stage, Layer, Image, Transformer, Circle, Line, Rect } from 'react-konva';
 import { useEditor } from '../../store/editorStore';
 import { extractPolygonRegion } from '../../utils/cutTool';
-
-// Interpolate between keyframes
-function interpolateValue(keyframes, property, time, defaultValue) {
-  const times = Object.keys(keyframes)
-    .map(Number)
-    .sort((a, b) => a - b);
-  
-  if (times.length === 0) return defaultValue;
-  
-  // Before first keyframe
-  if (time <= times[0]) {
-    return keyframes[times[0]]?.[property] ?? defaultValue;
-  }
-  
-  // After last keyframe
-  if (time >= times[times.length - 1]) {
-    return keyframes[times[times.length - 1]]?.[property] ?? defaultValue;
-  }
-  
-  // Find surrounding keyframes
-  let prevTime = times[0];
-  let nextTime = times[times.length - 1];
-  
-  for (let i = 0; i < times.length - 1; i++) {
-    if (time >= times[i] && time <= times[i + 1]) {
-      prevTime = times[i];
-      nextTime = times[i + 1];
-      break;
-    }
-  }
-  
-  const prevValue = keyframes[prevTime]?.[property];
-  const nextValue = keyframes[nextTime]?.[property];
-  
-  if (prevValue === undefined) return nextValue ?? defaultValue;
-  if (nextValue === undefined) return prevValue ?? defaultValue;
-  
-  // Linear interpolation
-  const t = (time - prevTime) / (nextTime - prevTime);
-  return prevValue + (nextValue - prevValue) * t;
-}
+import { getInterpolatedProperties } from '../../utils/animation';
 
 function LayerImage({ layer, isSelected, onSelect, onTransform, currentTime }) {
   const imageRef = useRef(null);
@@ -66,26 +26,8 @@ function LayerImage({ layer, isSelected, onSelect, onTransform, currentTime }) {
     }
   }, [isSelected]);
 
-  // Calculate interpolated values
-  const hasKeyframes = Object.keys(layer.keyframes || {}).length > 0;
-  const x = hasKeyframes 
-    ? interpolateValue(layer.keyframes, 'x', currentTime, layer.x)
-    : layer.x;
-  const y = hasKeyframes 
-    ? interpolateValue(layer.keyframes, 'y', currentTime, layer.y)
-    : layer.y;
-  const rotation = hasKeyframes 
-    ? interpolateValue(layer.keyframes, 'rotation', currentTime, layer.rotation)
-    : layer.rotation;
-  const scaleX = hasKeyframes 
-    ? interpolateValue(layer.keyframes, 'scaleX', currentTime, layer.scaleX)
-    : layer.scaleX;
-  const scaleY = hasKeyframes 
-    ? interpolateValue(layer.keyframes, 'scaleY', currentTime, layer.scaleY)
-    : layer.scaleY;
-  const opacity = hasKeyframes 
-    ? interpolateValue(layer.keyframes, 'opacity', currentTime, layer.opacity)
-    : layer.opacity;
+  // Get interpolated values using the new animation engine
+  const { x, y, rotation, scaleX, scaleY, opacity } = getInterpolatedProperties(layer, currentTime);
 
   if (!image || !layer.visible) return null;
 

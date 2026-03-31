@@ -72,6 +72,7 @@ const ACTIONS = {
   ADD_LAYER: 'ADD_LAYER',
   UPDATE_LAYER: 'UPDATE_LAYER',
   REMOVE_LAYER: 'REMOVE_LAYER',
+  DUPLICATE_LAYER: 'DUPLICATE_LAYER',
   REORDER_LAYERS: 'REORDER_LAYERS',
   SELECT_LAYER: 'SELECT_LAYER',
   SET_TOOL: 'SET_TOOL',
@@ -179,6 +180,27 @@ function editorReducer(state, action) {
         selectedLayerId: state.selectedLayerId === action.payload ? null : state.selectedLayerId,
         ui: { ...state.ui, isDirty: true },
       };
+      
+    case ACTIONS.DUPLICATE_LAYER: {
+      const sourceLayer = state.layers.find(l => l.id === action.payload);
+      if (!sourceLayer) return state;
+      
+      const newLayer = {
+        ...sourceLayer,
+        id: uuidv4(),
+        name: `${sourceLayer.name} (copy)`,
+        x: sourceLayer.x + 20,
+        y: sourceLayer.y + 20,
+        keyframes: JSON.parse(JSON.stringify(sourceLayer.keyframes || {})),
+      };
+      
+      return {
+        ...state,
+        layers: [...state.layers, newLayer],
+        selectedLayerId: newLayer.id,
+        ui: { ...state.ui, isDirty: true },
+      };
+    }
       
     case ACTIONS.REORDER_LAYERS:
       return {
@@ -322,6 +344,10 @@ export function EditorProvider({ children }) {
     
     removeLayer: useCallback((layerId) => {
       dispatch({ type: ACTIONS.REMOVE_LAYER, payload: layerId });
+    }, []),
+    
+    duplicateLayer: useCallback((layerId) => {
+      dispatch({ type: ACTIONS.DUPLICATE_LAYER, payload: layerId });
     }, []),
     
     reorderLayers: useCallback((layers) => {

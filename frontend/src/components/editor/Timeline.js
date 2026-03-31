@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useEditor } from '../../store/editorStore';
+import { EASING_TYPES, EASING_LABELS, PRIMARY_EASINGS } from '../../utils/animation';
 import { Play, Pause, RotateCcw, Repeat, Repeat1 } from 'lucide-react';
 
 export default function Timeline() {
@@ -9,6 +10,8 @@ export default function Timeline() {
   const animationRef = useRef(null);
   const lastTimeRef = useRef(null);
   const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
+  const [draggingKeyframe, setDraggingKeyframe] = useState(null);
+  const [selectedKeyframe, setSelectedKeyframe] = useState(null);
 
   const { duration, fps } = state.project;
   const { currentTime, isPlaying, loop } = state.timeline;
@@ -17,32 +20,37 @@ export default function Timeline() {
   const pixelsPerSecond = 100;
   const timelineWidth = duration * pixelsPerSecond;
 
-  // Animation loop
+  // Improved animation loop with fixed timestep for consistent FPS
   useEffect(() => {
     if (isPlaying) {
+      const frameTime = 1000 / fps; // Target frame time in ms
+      let accumulator = 0;
       lastTimeRef.current = performance.now();
       
       const animate = (now) => {
-        if (!lastTimeRef.current) {
-          lastTimeRef.current = now;
-        }
-        
-        const delta = (now - lastTimeRef.current) / 1000;
+        const delta = now - lastTimeRef.current;
         lastTimeRef.current = now;
+        accumulator += delta;
         
-        let newTime = currentTime + delta;
-        
-        if (newTime >= duration) {
-          if (loop) {
-            newTime = newTime % duration;
-          } else {
-            newTime = duration;
-            actions.setTimeline({ isPlaying: false, currentTime: newTime });
-            return;
+        // Process accumulated time in fixed steps
+        while (accumulator >= frameTime) {
+          accumulator -= frameTime;
+          
+          let newTime = state.timeline.currentTime + (frameTime / 1000);
+          
+          if (newTime >= duration) {
+            if (loop) {
+              newTime = newTime % duration;
+            } else {
+              newTime = duration;
+              actions.setTimeline({ isPlaying: false, currentTime: newTime });
+              return;
+            }
           }
+          
+          actions.setTimeline({ currentTime: newTime });
         }
         
-        actions.setTimeline({ currentTime: newTime });
         animationRef.current = requestAnimationFrame(animate);
       };
       
@@ -54,9 +62,10 @@ export default function Timeline() {
         }
       };
     }
-  }, [isPlaying, currentTime, duration, loop, actions]);
+  }, [isPlaying, duration, loop, fps, actions, state.timeline.currentTime]);
 
   const handlePlayPause = () => {
+    lastTimeRef.current = null;
     actions.setTimeline({ isPlaying: !isPlaying });
   };
 
@@ -69,12 +78,13 @@ export default function Timeline() {
   };
 
   const handleTimelineClick = (e) => {
-    if (isDraggingPlayhead) return;
+    if (isDraggingPlayhead || draggingKeyframe) return;
     
     const rect = trackAreaRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
+    const x = e.clientX - rect.left + trackAreaRef.current.scrollLeft;
     const newTime = Math.max(0, Math.min(duration, x / pixelsPerSecond));
     actions.setTimeline({ currentTime: newTime });
+    setSelectedKeyframe(null);
   };
 
   const handlePlayheadMouseDown = (e) => {
@@ -87,7 +97,7 @@ export default function Timeline() {
 
     const handleMouseMove = (e) => {
       const rect = trackAreaRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left;
+      const x = e.clientX - rect.left + trackAreaRef.current.scrollLeft;
       const newTime = Math.max(0, Math.min(duration, x / pixelsPerSecond));
       actions.setTimeline({ currentTime: newTime });
     };
@@ -105,17 +115,82 @@ export default function Timeline() {
     };
   }, [isDraggingPlayhead, duration, pixelsPerSecond, actions]);
 
+  // Keyframe dragging for independent timing control
+  const handleKeyframeMouseDown = (e, layerId, time) => {
+    e.stopPropagation();
+    setDraggingKeyframe({ layerId, originalTime: parseFloat(time) });
+    setSelectedKeyframe({ layerId, time: parseFloat(time) });
+    actions.selectLayer(layerId);
+  };
+
+  useEffect(() => {
+    if (!draggingKeyframe) return;
+
+    const handleMouseMove = (e) => {
+      const rect = trackAreaRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left + trackAreaRef.current.scrollLeft;
+      let newTime = Math.max(0, Math.min(duration, x / pixelsPerSecond));
+      
+      // Snap to 0.05s increments for precision
+      newTime = Math.round(newTime * 20) / 20;
+      
+      const { layerId, originalTime } = draggingKeyframe;
+      const layer = state.layers.find(l => l.id === layerId);
+      
+      if (layer && newTime !== originalTime) {
+        // Move keyframe to new time
+        const keyframeData = layer.keyframes[originalTime];
+        if (keyframeData) {
+          // Remove from old time, add to new time
+          const newKeyframes = { ...layer.keyframes };
+          delete newKeyframes[originalTime];
+          newKeyframes[newTime] = keyframeData;
+          
+          actions.updateLayer(layerId, { keyframes: newKeyframes });
+          setDraggingKeyframe({ layerId, originalTime: newTime });
+          setSelectedKeyframe({ layerId, time: newTime });
+        }
+      }
+    };
+
+    const handleMouseUp = () => {
+      setDraggingKeyframe(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [draggingKeyframe, duration, pixelsPerSecond, state.layers, actions]);
+
   const handleKeyframeClick = (e, layerId, time) => {
     e.stopPropagation();
     actions.setTimeline({ currentTime: parseFloat(time) });
     actions.selectLayer(layerId);
+    setSelectedKeyframe({ layerId, time: parseFloat(time) });
   };
 
   const handleKeyframeDoubleClick = (e, layerId, time) => {
     e.stopPropagation();
     if (window.confirm('Delete this keyframe?')) {
       actions.removeKeyframe(layerId, parseFloat(time));
+      setSelectedKeyframe(null);
     }
+  };
+
+  const handleEasingChange = (layerId, time, newEasing) => {
+    const layer = state.layers.find(l => l.id === layerId);
+    if (layer && layer.keyframes[time]) {
+      actions.updateKeyframe(layerId, time, { easing: newEasing });
+    }
+  };
+
+  // Get easing for a specific keyframe
+  const getKeyframeEasing = (layer, time) => {
+    return layer.keyframes?.[time]?.easing || EASING_TYPES.LINEAR;
   };
 
   // Generate time markers
@@ -174,6 +249,33 @@ export default function Timeline() {
         <span className="text-xs text-zinc-600 ml-2">
           @ {fps} fps
         </span>
+
+        {/* Easing selector for selected keyframe */}
+        {selectedKeyframe && (
+          <>
+            <div className="h-4 w-px bg-zinc-700 mx-2" />
+            <span className="text-xs text-zinc-500">Easing:</span>
+            <select
+              value={getKeyframeEasing(
+                state.layers.find(l => l.id === selectedKeyframe.layerId),
+                selectedKeyframe.time
+              )}
+              onChange={(e) => handleEasingChange(
+                selectedKeyframe.layerId,
+                selectedKeyframe.time,
+                e.target.value
+              )}
+              className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-white focus:border-cyan-500 outline-none"
+              data-testid="easing-selector"
+            >
+              {PRIMARY_EASINGS.map(easing => (
+                <option key={easing} value={easing}>
+                  {EASING_LABELS[easing]}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
       </div>
 
       {/* Timeline header with time markers */}
@@ -247,17 +349,42 @@ export default function Timeline() {
                 data-testid={`timeline-track-${layer.id}`}
               >
                 {/* Keyframes */}
-                {Object.keys(layer.keyframes || {}).map(time => (
-                  <div
-                    key={time}
-                    className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-violet-500 cursor-pointer hover:scale-125 transition-transform keyframe-diamond"
-                    style={{ left: parseFloat(time) * pixelsPerSecond - 5 }}
-                    onClick={(e) => handleKeyframeClick(e, layer.id, time)}
-                    onDoubleClick={(e) => handleKeyframeDoubleClick(e, layer.id, time)}
-                    title={`Keyframe at ${time}s - Double-click to delete`}
-                    data-testid={`keyframe-${layer.id}-${time}`}
-                  />
-                ))}
+                {Object.keys(layer.keyframes || {}).map(time => {
+                  const isSelected = selectedKeyframe?.layerId === layer.id && 
+                                    selectedKeyframe?.time === parseFloat(time);
+                  const easing = getKeyframeEasing(layer, time);
+                  const hasEasing = easing !== EASING_TYPES.LINEAR;
+                  
+                  return (
+                    <div
+                      key={time}
+                      className={`absolute top-1/2 -translate-y-1/2 cursor-pointer transition-transform ${
+                        isSelected ? 'scale-150 z-20' : 'hover:scale-125'
+                      }`}
+                      style={{ left: parseFloat(time) * pixelsPerSecond - 5 }}
+                      onClick={(e) => handleKeyframeClick(e, layer.id, time)}
+                      onDoubleClick={(e) => handleKeyframeDoubleClick(e, layer.id, time)}
+                      onMouseDown={(e) => handleKeyframeMouseDown(e, layer.id, time)}
+                      title={`${time}s - ${EASING_LABELS[easing]}\nDrag to move, Double-click to delete`}
+                      data-testid={`keyframe-${layer.id}-${time}`}
+                    >
+                      {/* Keyframe diamond */}
+                      <div 
+                        className={`w-2.5 h-2.5 keyframe-diamond ${
+                          isSelected 
+                            ? 'bg-cyan-400' 
+                            : hasEasing 
+                              ? 'bg-violet-400' 
+                              : 'bg-violet-500'
+                        }`}
+                      />
+                      {/* Easing indicator dot */}
+                      {hasEasing && !isSelected && (
+                        <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-cyan-400" />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             ))}
 
