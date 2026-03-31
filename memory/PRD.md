@@ -49,6 +49,7 @@ Build Mini Editor - a web-based 2D sticker animation editor for short looping re
 │       └── utils/
 │           ├── db.js               # IndexedDB operations
 │           ├── cutTool.js          # Polygon cutting utilities
+│           ├── animation.js        # Easing & interpolation engine
 │           └── export.js           # Frame rendering & export
 ```
 
@@ -81,6 +82,14 @@ Build Mini Editor - a web-based 2D sticker animation editor for short looping re
 - WebM export (backend-assisted)
 - Export progress indicator
 
+### Phase 5 - Animation System Upgrade ✅ (March 31, 2026)
+- **Easing System**: Per-keyframe easing (linear, ease-in, ease-out, ease-in-out)
+- **Interpolation Engine**: Smooth eased interpolation between keyframes
+- **Draggable Keyframes**: Independent timing control per layer
+- **Fixed Timestep Playback**: Consistent FPS playback engine
+- **Duplicate Layer**: Clone layer with all properties and keyframes
+- **Easing UI**: Dropdown selector in timeline controls
+
 ## Prioritized Backlog
 
 ### P0 (Critical for MVP - DONE)
@@ -92,16 +101,17 @@ Build Mini Editor - a web-based 2D sticker animation editor for short looping re
 - [x] Playback
 - [x] Export GIF/WebM
 - [x] Save/Load projects
+- [x] Easing system
+- [x] Draggable keyframes
 
 ### P1 (Important)
 - [ ] Undo/Redo functionality
-- [ ] Duplicate layer
 - [ ] Better cut tool with bezier curves
 - [ ] Onion skin preview
 - [ ] Multiple project tabs
+- [ ] Advanced easing presets (bounce, elastic, back)
 
 ### P2 (Nice to Have)
-- [ ] Simple easing presets (ease-in, ease-out, bounce)
 - [ ] Autosave indicator
 - [ ] Templates/presets
 - [ ] Mobile view-only mode
@@ -114,15 +124,35 @@ Build Mini Editor - a web-based 2D sticker animation editor for short looping re
 - [ ] Audio sync
 - [ ] Multiple canvas sizes presets
 
+## Animation System Details
+
+### Easing Functions Available
+- `linear` - Constant speed (default for older keyframes)
+- `ease-in` - Starts slow, accelerates
+- `ease-out` - Starts fast, decelerates (default for new keyframes)
+- `ease-in-out` - Smooth start and end
+
+### How Easing Works
+- Easing is stored on each keyframe
+- When interpolating, the NEXT keyframe's easing determines how we arrive at it
+- This matches standard animation software conventions
+
+### Keyframe Data Structure
+```javascript
+keyframes: {
+  0: { x: 100, y: 200, rotation: 0, scaleX: 1, scaleY: 1, opacity: 1, easing: 'linear' },
+  1: { x: 300, y: 200, rotation: 45, scaleX: 1.5, scaleY: 1.5, opacity: 0.8, easing: 'ease-out' }
+}
+```
+
 ## Next Action Items
 1. Add undo/redo functionality for transform changes
-2. Implement duplicate layer feature
+2. Implement onion skin preview for animation
 3. Add bezier curve support to cut tool
-4. Add easing presets to keyframe interpolation
-5. Consider cloud storage integration for cross-device access
+4. Consider advanced easing presets (bounce, elastic)
 
 ## Known Limitations
 - Desktop-first (mobile not optimized)
-- No undo/redo in MVP
+- No undo/redo yet
 - Cut tool uses basic polygon selection
-- Linear interpolation only (no easing)
+- No onion skin preview
