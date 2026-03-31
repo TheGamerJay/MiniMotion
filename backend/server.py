@@ -1,5 +1,6 @@
 from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -20,7 +21,9 @@ load_dotenv(ROOT_DIR / '.env')
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+# Parse DB name from URL path (e.g. mongodb+srv://.../<dbname>?...), fallback to 'mini_editor'
+_url_path = mongo_url.split('/')[-1].split('?')[0]
+db = client[_url_path if _url_path else 'mini_editor']
 
 # Create the main app without a prefix
 app = FastAPI(title="Mini Editor API")
@@ -219,3 +222,8 @@ app.add_middleware(
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
+
+# Serve React frontend — must be mounted last so /api routes take priority
+frontend_build = ROOT_DIR.parent / 'frontend' / 'build'
+if frontend_build.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_build), html=True), name="static")
