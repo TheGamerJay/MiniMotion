@@ -1,7 +1,8 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useEditor } from '../../store/editorStore';
 import { saveProject, getAllProjects, loadProject } from '../../utils/db';
 import { renderAnimationFrames, exportAnimation, downloadBlob } from '../../utils/export';
+import KeyboardShortcutsModal from './KeyboardShortcutsModal';
 import { 
   Plus, 
   Save, 
@@ -10,20 +11,112 @@ import {
   Pause, 
   FolderOpen,
   FileImage,
-  RotateCcw
+  RotateCcw,
+  Undo2,
+  Redo2,
+  Keyboard,
+  Check
 } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const AUTO_SAVE_INTERVAL = 30000; // 30 seconds
+const EXPORT_SIZES = [
+  { label: '512×512', width: 512, height: 512 },
+  { label: '256×256', width: 256, height: 256 },
+  { label: '128×128', width: 128, height: 128 },
+  { label: 'Custom', width: null, height: null },
+];
 
 export default function TopBar() {
   const { state, actions } = useEditor();
   const [showProjectsModal, setShowProjectsModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showShortcutsModal, setShowShortcutsModal] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [exportFormat, setExportFormat] = useState('gif');
+  const [batchExport, setBatchExport] = useState(false);
+  const [selectedSizes, setSelectedSizes] = useState([0]); // indices of EXPORT_SIZES
   const [projects, setProjects] = useState([]);
   const [projectName, setProjectName] = useState(state.project.name);
+  const [autoSaveStatus, setAutoSaveStatus] = useState(null); // 'saving', 'saved', null
   const fileInputRef = useRef(null);
+  const autoSaveTimerRef = useRef(null);
+
+  // Auto-save effect
+  useEffect(() => {
+    if (state.project.id && state.ui.isDirty) {
+      // Clear existing timer
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+      
+      // Set new auto-save timer
+      autoSaveTimerRef.current = setTimeout(async () => {
+        try {
+          setAutoSaveStatus('saving');
+          await saveProject({
+            project: state.project,
+            assets: state.assets,
+            layers: state.layers,
+            timeline: state.timeline,
+          });
+          actions.setUI({ isDirty: false, lastAutoSave: new Date().toISOString() });
+          setAutoSaveStatus('saved');
+          setTimeout(() => setAutoSaveStatus(null), 2000);
+        } catch (error) {
+          console.error('Auto-save failed:', error);
+          setAutoSaveStatus(null);
+        }
+      }, AUTO_SAVE_INTERVAL);
+    }
+    
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, [state.project, state.assets, state.layers, state.timeline, state.ui.isDirty, actions]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Undo: Ctrl+Z
+      if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        actions.undo();
+      }
+      // Redo: Ctrl+Shift+Z or Ctrl+Y
+      if ((e.ctrlKey && e.shiftKey && e.key === 'z') || (e.ctrlKey && e.key === 'y')) {
+        e.preventDefault();
+        actions.redo();
+      }
+      // Save: Ctrl+S
+      if (e.ctrlKey && e.key === 's') {
+        e.preventDefault();
+        handleSave();
+      }
+      // Export: Ctrl+E
+      if (e.ctrlKey && e.key === 'e') {
+        e.preventDefault();
+        handleExport();
+      }
+      // Show shortcuts: ?
+      if (e.key === '?' && !e.ctrlKey) {
+        setShowShortcutsModal(true);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [actions]);
+
+  const handleUndo = () => {
+    actions.undo();
+  };
+
+  const handleRedo = () => {
+    actions.redo();
+  };
 
   const handleNewProject = () => {
     if (state.ui.isDirty) {
@@ -107,29 +200,46 @@ export default function TopBar() {
     setExportProgress(0);
     
     try {
-      // Render all frames
-      const frames = await renderAnimationFrames(
-        state.layers,
-        state.project.canvasSize,
-        state.project.duration,
-        state.project.fps,
-        (progress) => setExportProgress(progress * 0.5) // 0-50% for rendering
-      );
+      // Determine sizes to export
+      const sizesToExport = batchExport 
+        ? selectedSizes.map(i => EXPORT_SIZES[i]).filter(s => s.width !== null)
+        : [state.project.canvasSize];
       
-      // Export via backend
-      setExportProgress(0.5);
-      const blob = await exportAnimation(
-        frames,
-        state.project.fps,
-        state.project.canvasSize,
-        exportFormat
-      );
-      
-      setExportProgress(1);
-      
-      // Download the file
-      const filename = `${state.project.name.replace(/[^a-z0-9]/gi, '_')}.${exportFormat}`;
-      downloadBlob(blob, filename);
+      for (let sizeIndex = 0; sizeIndex < sizesToExport.length; sizeIndex++) {
+        const size = sizesToExport[sizeIndex];
+        const progressBase = sizeIndex / sizesToExport.length;
+        const progressRange = 1 / sizesToExport.length;
+        
+        // Render all frames at this size
+        const frames = await renderAnimationFrames(
+          state.layers,
+          size,
+          state.project.duration,
+          state.project.fps,
+          (progress) => setExportProgress(progressBase + progress * progressRange * 0.5)
+        );
+        
+        // Export via backend
+        setExportProgress(progressBase + progressRange * 0.5);
+        const blob = await exportAnimation(
+          frames,
+          state.project.fps,
+          size,
+          exportFormat
+        );
+        
+        setExportProgress(progressBase + progressRange);
+        
+        // Download the file
+        const sizeSuffix = batchExport ? `_${size.width}x${size.height}` : '';
+        const filename = `${state.project.name.replace(/[^a-z0-9]/gi, '_')}${sizeSuffix}.${exportFormat}`;
+        downloadBlob(blob, filename);
+        
+        // Small delay between batch downloads
+        if (batchExport && sizeIndex < sizesToExport.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
       
       setShowExportModal(false);
     } catch (error) {
@@ -139,6 +249,15 @@ export default function TopBar() {
       actions.setUI({ isExporting: false });
       setExportProgress(0);
     }
+  };
+
+  const handleToggleExportSize = (index) => {
+    setSelectedSizes(prev => {
+      if (prev.includes(index)) {
+        return prev.filter(i => i !== index);
+      }
+      return [...prev, index];
+    });
   };
 
   const handleUploadClick = () => {
@@ -241,11 +360,36 @@ export default function TopBar() {
               onClick={handleSave}
               disabled={state.ui.isSaving || !state.project.id}
               className="p-1.5 hover:bg-zinc-800 rounded text-zinc-400 hover:text-white transition-colors flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Save Project"
+              title="Save Project (Ctrl+S)"
               data-testid="save-project-btn"
             >
               <Save size={18} />
             </button>
+            
+            <div className="h-4 w-px bg-zinc-700 mx-1" />
+            
+            {/* Undo/Redo buttons */}
+            <button
+              onClick={handleUndo}
+              disabled={state.history.past.length === 0}
+              className="p-1.5 hover:bg-zinc-800 rounded text-zinc-400 hover:text-white transition-colors flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Undo (Ctrl+Z)"
+              data-testid="undo-btn"
+            >
+              <Undo2 size={18} />
+            </button>
+            
+            <button
+              onClick={handleRedo}
+              disabled={state.history.future.length === 0}
+              className="p-1.5 hover:bg-zinc-800 rounded text-zinc-400 hover:text-white transition-colors flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Redo (Ctrl+Shift+Z)"
+              data-testid="redo-btn"
+            >
+              <Redo2 size={18} />
+            </button>
+            
+            <div className="h-4 w-px bg-zinc-700 mx-1" />
             
             <button
               onClick={handleUploadClick}
@@ -267,8 +411,8 @@ export default function TopBar() {
           </div>
         </div>
 
-        {/* Center section - Project name */}
-        <div className="flex-1 flex justify-center">
+        {/* Center section - Project name and auto-save status */}
+        <div className="flex-1 flex justify-center items-center gap-2">
           <input
             type="text"
             value={projectName}
@@ -278,13 +422,34 @@ export default function TopBar() {
             placeholder="Project Name"
             data-testid="project-name-input"
           />
-          {state.ui.isDirty && (
-            <span className="text-zinc-500 ml-1">•</span>
+          {state.ui.isDirty && !autoSaveStatus && (
+            <span className="text-zinc-500 text-xs">•</span>
+          )}
+          {autoSaveStatus === 'saving' && (
+            <span className="text-zinc-500 text-xs animate-pulse">Saving...</span>
+          )}
+          {autoSaveStatus === 'saved' && (
+            <span className="text-green-500 text-xs flex items-center gap-1">
+              <Check size={12} />
+              Saved
+            </span>
           )}
         </div>
 
         {/* Right section - Playback and Export */}
         <div className="flex items-center gap-2">
+          {/* Shortcuts button */}
+          <button
+            onClick={() => setShowShortcutsModal(true)}
+            className="p-1.5 hover:bg-zinc-800 rounded text-zinc-400 hover:text-white transition-colors"
+            title="Keyboard Shortcuts (?)"
+            data-testid="shortcuts-btn"
+          >
+            <Keyboard size={18} />
+          </button>
+          
+          <div className="h-4 w-px bg-zinc-700" />
+          
           <div className="flex items-center gap-1 mr-2">
             <button
               onClick={handleStop}
@@ -406,6 +571,47 @@ export default function TopBar() {
                 <p>Total frames: {Math.ceil(state.project.duration * state.project.fps)}</p>
               </div>
               
+              {/* Batch export toggle */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-zinc-400">Batch Export (multiple sizes)</label>
+                <button
+                  onClick={() => setBatchExport(!batchExport)}
+                  className={`w-8 h-4 rounded-full transition-colors ${
+                    batchExport ? 'bg-cyan-500' : 'bg-zinc-700'
+                  }`}
+                  disabled={state.ui.isExporting}
+                  data-testid="batch-export-toggle"
+                >
+                  <div className={`w-3 h-3 bg-white rounded-full transition-transform ${
+                    batchExport ? 'translate-x-4' : 'translate-x-0.5'
+                  }`} />
+                </button>
+              </div>
+              
+              {/* Size selection for batch export */}
+              {batchExport && (
+                <div>
+                  <label className="text-xs text-zinc-400 mb-1 block">Export Sizes</label>
+                  <div className="flex flex-wrap gap-1">
+                    {EXPORT_SIZES.filter(s => s.width !== null).map((size, index) => (
+                      <button
+                        key={size.label}
+                        onClick={() => handleToggleExportSize(index)}
+                        disabled={state.ui.isExporting}
+                        className={`px-2 py-1 text-xs rounded transition-colors ${
+                          selectedSizes.includes(index)
+                            ? 'bg-cyan-500 text-black'
+                            : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                        }`}
+                        data-testid={`export-size-${size.label}`}
+                      >
+                        {size.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
               {/* Progress bar */}
               {state.ui.isExporting && (
                 <div className="space-y-2">
@@ -443,6 +649,11 @@ export default function TopBar() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Keyboard Shortcuts Modal */}
+      {showShortcutsModal && (
+        <KeyboardShortcutsModal onClose={() => setShowShortcutsModal(false)} />
       )}
     </>
   );

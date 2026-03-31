@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useCallback } from 'react';
+import React, { createContext, useContext, useReducer, useCallback, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 
 const EditorContext = createContext(null);
@@ -6,6 +6,8 @@ const EditorContext = createContext(null);
 const DEFAULT_CANVAS_SIZE = { width: 512, height: 512 };
 const DEFAULT_FPS = 24;
 const DEFAULT_DURATION = 2; // seconds
+const MAX_HISTORY_SIZE = 50; // Maximum undo steps
+const AUTO_SAVE_INTERVAL = 30000; // 30 seconds
 
 const initialState = {
   // Project metadata
@@ -22,7 +24,7 @@ const initialState = {
   // Assets (uploaded images)
   assets: [],
   
-  // Layers (cut parts)
+  // Layers (cut parts) - now includes text layers
   layers: [],
   
   // Selected layer ID
@@ -33,12 +35,14 @@ const initialState = {
     currentTime: 0,
     isPlaying: false,
     loop: true,
+    previewRange: null, // { start: number, end: number } for quick preview
   },
   
   // Tool state
   tool: {
-    active: 'select', // 'select', 'cut', 'pivot'
+    active: 'select', // 'select', 'cut', 'pivot', 'text'
     cutPoints: [], // Points for cut polygon
+    cutMode: 'polygon', // 'polygon', 'bezier', 'magicWand'
   },
   
   // Canvas state
@@ -46,6 +50,7 @@ const initialState = {
     zoom: 1,
     panX: 0,
     panY: 0,
+    showMotionPath: false,
   },
   
   // History for undo/redo
@@ -61,6 +66,8 @@ const initialState = {
     isExporting: false,
     onionSkinEnabled: false,
     onionSkinFrames: 2,
+    showShortcutsModal: false,
+    lastAutoSave: null,
   },
   
   // Clipboard for keyframe copy/paste
@@ -98,9 +105,99 @@ const ACTIONS = {
   SET_UI: 'SET_UI',
   UNDO: 'UNDO',
   REDO: 'REDO',
+  ADD_TEXT_LAYER: 'ADD_TEXT_LAYER',
+  UPDATE_TEXT_LAYER: 'UPDATE_TEXT_LAYER',
+  SET_PREVIEW_RANGE: 'SET_PREVIEW_RANGE',
+  CLEAR_PREVIEW_RANGE: 'CLEAR_PREVIEW_RANGE',
+  SET_CUT_MODE: 'SET_CUT_MODE',
+  TOGGLE_MOTION_PATH: 'TOGGLE_MOTION_PATH',
+  UPDATE_LAYER_EFFECTS: 'UPDATE_LAYER_EFFECTS',
 };
 
+// Actions that should be recorded in history for undo/redo
+const UNDOABLE_ACTIONS = [
+  ACTIONS.ADD_LAYER,
+  ACTIONS.UPDATE_LAYER,
+  ACTIONS.REMOVE_LAYER,
+  ACTIONS.DUPLICATE_LAYER,
+  ACTIONS.REORDER_LAYERS,
+  ACTIONS.ADD_KEYFRAME,
+  ACTIONS.UPDATE_KEYFRAME,
+  ACTIONS.REMOVE_KEYFRAME,
+  ACTIONS.SHIFT_KEYFRAMES,
+  ACTIONS.DUPLICATE_LAYER_WITH_OFFSET,
+  ACTIONS.PASTE_KEYFRAMES,
+  ACTIONS.ADD_TEXT_LAYER,
+  ACTIONS.UPDATE_TEXT_LAYER,
+  ACTIONS.UPDATE_LAYER_EFFECTS,
+];
+
+// Create a snapshot of undoable state
+function createSnapshot(state) {
+  return {
+    layers: JSON.parse(JSON.stringify(state.layers)),
+    assets: JSON.parse(JSON.stringify(state.assets)),
+    selectedLayerId: state.selectedLayerId,
+  };
+}
+
+// Restore state from snapshot
+function restoreSnapshot(state, snapshot) {
+  return {
+    ...state,
+    layers: snapshot.layers,
+    assets: snapshot.assets,
+    selectedLayerId: snapshot.selectedLayerId,
+    ui: { ...state.ui, isDirty: true },
+  };
+}
+
 function editorReducer(state, action) {
+  // Handle undo/redo first
+  if (action.type === ACTIONS.UNDO) {
+    if (state.history.past.length === 0) return state;
+    
+    const previous = state.history.past[state.history.past.length - 1];
+    const newPast = state.history.past.slice(0, -1);
+    
+    return {
+      ...restoreSnapshot(state, previous),
+      history: {
+        past: newPast,
+        future: [createSnapshot(state), ...state.history.future],
+      },
+    };
+  }
+  
+  if (action.type === ACTIONS.REDO) {
+    if (state.history.future.length === 0) return state;
+    
+    const next = state.history.future[0];
+    const newFuture = state.history.future.slice(1);
+    
+    return {
+      ...restoreSnapshot(state, next),
+      history: {
+        past: [...state.history.past, createSnapshot(state)],
+        future: newFuture,
+      },
+    };
+  }
+  
+  // For undoable actions, save current state to history
+  let newState = state;
+  if (UNDOABLE_ACTIONS.includes(action.type)) {
+    const snapshot = createSnapshot(state);
+    const newPast = [...state.history.past, snapshot].slice(-MAX_HISTORY_SIZE);
+    newState = {
+      ...state,
+      history: {
+        past: newPast,
+        future: [], // Clear redo stack on new action
+      },
+    };
+  }
+  
   switch (action.type) {
     case ACTIONS.NEW_PROJECT:
       return {
@@ -415,18 +512,104 @@ function editorReducer(state, action) {
       
     case ACTIONS.SET_CANVAS:
       return {
-        ...state,
-        canvas: { ...state.canvas, ...action.payload },
+        ...newState,
+        canvas: { ...newState.canvas, ...action.payload },
       };
       
     case ACTIONS.SET_UI:
       return {
-        ...state,
-        ui: { ...state.ui, ...action.payload },
+        ...newState,
+        ui: { ...newState.ui, ...action.payload },
       };
+    
+    // Text layer support
+    case ACTIONS.ADD_TEXT_LAYER: {
+      const textLayer = {
+        id: uuidv4(),
+        type: 'text',
+        name: action.payload.name || 'Text Layer',
+        text: action.payload.text || 'Text',
+        fontFamily: action.payload.fontFamily || 'Arial',
+        fontSize: action.payload.fontSize || 48,
+        fontWeight: action.payload.fontWeight || 'bold',
+        color: action.payload.color || '#FFFFFF',
+        visible: true,
+        locked: false,
+        opacity: 1,
+        x: action.payload.x || newState.project.canvasSize.width / 2,
+        y: action.payload.y || newState.project.canvasSize.height / 2,
+        rotation: 0,
+        scaleX: 1,
+        scaleY: 1,
+        pivotX: 0,
+        pivotY: 0,
+        width: action.payload.width || 200,
+        height: action.payload.height || 60,
+        keyframes: {},
+        effects: {},
+      };
+      return {
+        ...newState,
+        layers: [...newState.layers, textLayer],
+        selectedLayerId: textLayer.id,
+        ui: { ...newState.ui, isDirty: true },
+      };
+    }
+    
+    case ACTIONS.UPDATE_TEXT_LAYER: {
+      const { id, updates } = action.payload;
+      return {
+        ...newState,
+        layers: newState.layers.map(layer =>
+          layer.id === id ? { ...layer, ...updates } : layer
+        ),
+        ui: { ...newState.ui, isDirty: true },
+      };
+    }
+    
+    // Preview range for quick preview
+    case ACTIONS.SET_PREVIEW_RANGE:
+      return {
+        ...newState,
+        timeline: { ...newState.timeline, previewRange: action.payload },
+      };
+    
+    case ACTIONS.CLEAR_PREVIEW_RANGE:
+      return {
+        ...newState,
+        timeline: { ...newState.timeline, previewRange: null },
+      };
+    
+    // Cut mode
+    case ACTIONS.SET_CUT_MODE:
+      return {
+        ...newState,
+        tool: { ...newState.tool, cutMode: action.payload },
+      };
+    
+    // Motion path toggle
+    case ACTIONS.TOGGLE_MOTION_PATH:
+      return {
+        ...newState,
+        canvas: { ...newState.canvas, showMotionPath: !newState.canvas.showMotionPath },
+      };
+    
+    // Layer effects (drop shadow, glow, outline)
+    case ACTIONS.UPDATE_LAYER_EFFECTS: {
+      const { layerId, effects } = action.payload;
+      return {
+        ...newState,
+        layers: newState.layers.map(layer =>
+          layer.id === layerId
+            ? { ...layer, effects: { ...layer.effects, ...effects } }
+            : layer
+        ),
+        ui: { ...newState.ui, isDirty: true },
+      };
+    }
       
     default:
-      return state;
+      return newState;
   }
 }
 
@@ -530,6 +713,48 @@ export function EditorProvider({ children }) {
     
     setUI: useCallback((updates) => {
       dispatch({ type: ACTIONS.SET_UI, payload: updates });
+    }, []),
+    
+    // Undo/Redo
+    undo: useCallback(() => {
+      dispatch({ type: ACTIONS.UNDO });
+    }, []),
+    
+    redo: useCallback(() => {
+      dispatch({ type: ACTIONS.REDO });
+    }, []),
+    
+    // Text layers
+    addTextLayer: useCallback((textData) => {
+      dispatch({ type: ACTIONS.ADD_TEXT_LAYER, payload: textData });
+    }, []),
+    
+    updateTextLayer: useCallback((id, updates) => {
+      dispatch({ type: ACTIONS.UPDATE_TEXT_LAYER, payload: { id, updates } });
+    }, []),
+    
+    // Preview range
+    setPreviewRange: useCallback((range) => {
+      dispatch({ type: ACTIONS.SET_PREVIEW_RANGE, payload: range });
+    }, []),
+    
+    clearPreviewRange: useCallback(() => {
+      dispatch({ type: ACTIONS.CLEAR_PREVIEW_RANGE });
+    }, []),
+    
+    // Cut mode
+    setCutMode: useCallback((mode) => {
+      dispatch({ type: ACTIONS.SET_CUT_MODE, payload: mode });
+    }, []),
+    
+    // Motion path
+    toggleMotionPath: useCallback(() => {
+      dispatch({ type: ACTIONS.TOGGLE_MOTION_PATH });
+    }, []),
+    
+    // Layer effects
+    updateLayerEffects: useCallback((layerId, effects) => {
+      dispatch({ type: ACTIONS.UPDATE_LAYER_EFFECTS, payload: { layerId, effects } });
     }, []),
   };
   

@@ -11,6 +11,7 @@ import {
   MousePointer2,
   Scissors,
   Move3D,
+  Type,
   Image as ImageIcon,
   Layers
 } from 'lucide-react';
@@ -23,10 +24,21 @@ export default function LeftPanel() {
     { id: 'select', icon: MousePointer2, label: 'Select' },
     { id: 'cut', icon: Scissors, label: 'Cut' },
     { id: 'pivot', icon: Move3D, label: 'Pivot' },
+    { id: 'text', icon: Type, label: 'Text' },
   ];
 
   const handleToolClick = (toolId) => {
     actions.setTool(toolId);
+    
+    // If text tool, add a text layer immediately
+    if (toolId === 'text') {
+      actions.addTextLayer({
+        text: 'Text',
+        x: state.project.canvasSize.width / 2,
+        y: state.project.canvasSize.height / 2,
+      });
+      actions.setTool('select');
+    }
   };
 
   const handleLayerSelect = (layerId) => {
