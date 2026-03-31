@@ -1,0 +1,105 @@
+{
+  "theme": "dark",
+  "archetype": "7 (Electric & Neon) adapted for Editor (Precision)",
+  "colors": {
+    "background": {
+      "app": "#09090B",
+      "panel": "#18181B",
+      "canvas": "#000000"
+    },
+    "border": {
+      "default": "#27272A",
+      "active": "#06B6D4"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "#A1A1AA",
+      "disabled": "#52525B"
+    },
+    "accents": {
+      "cyan": "#06B6D4",
+      "violet": "#8B5CF6",
+      "warning": "#EF4444"
+    }
+  },
+  "typography": {
+    "heading_font": "Outfit",
+    "body_font": "Manrope",
+    "mono_font": "JetBrains Mono",
+    "scale": {
+      "h1": "text-2xl font-bold tracking-tight",
+      "h2": "text-sm font-semibold tracking-wide uppercase",
+      "body": "text-sm",
+      "small": "text-xs",
+      "mono": "text-[11px] font-mono"
+    }
+  },
+  "layout": {
+    "strategy": "Control Room Grid (Full Screen Editor)",
+    "structure": {
+      "app_wrapper": "h-screen w-screen overflow-hidden flex flex-col bg-zinc-950 text-white",
+      "top_bar": "h-14 border-b border-zinc-800 flex items-center justify-between px-4 bg-zinc-900",
+      "main_workspace": "flex-1 flex overflow-hidden",
+      "left_panel": "w-64 border-r border-zinc-800 flex flex-col bg-zinc-900",
+      "center_canvas": "flex-1 bg-black relative overflow-hidden flex items-center justify-center",
+      "right_panel": "w-72 border-l border-zinc-800 flex flex-col bg-zinc-900 overflow-y-auto",
+      "bottom_timeline": "h-64 border-t border-zinc-800 bg-zinc-900 flex flex-col"
+    },
+    "spacing": "Tight padding (p-2 to p-4) to maximize workspace.",
+    "alignment": "Strictly left-aligned text for all property panels. Canvas content centered."
+  },
+  "components": {
+    "panels": "Solid background, 1px border. No glassmorphism. Crisp and technical.",
+    "buttons": {
+      "primary": "bg-cyan-500 hover:bg-cyan-400 text-black font-semibold rounded-md transition-colors px-3 py-1.5",
+      "secondary": "bg-zinc-800 hover:bg-zinc-700 text-white rounded-md transition-colors px-3 py-1.5",
+      "icon": "p-1.5 hover:bg-zinc-800 rounded text-zinc-400 hover:text-white transition-colors flex items-center justify-center"
+    },
+    "inputs": "bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-sm font-mono focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/50 outline-none w-full",
+    "timeline": {
+      "track": "h-8 border-b border-zinc-800/50 relative hover:bg-zinc-800/30 flex items-center",
+      "playhead": "absolute top-0 bottom-0 w-px bg-cyan-500 z-10",
+      "playhead_handle": "absolute top-0 -ml-1.5 w-3 h-3 bg-cyan-500 clip-polygon-playhead cursor-ew-resize",
+      "keyframe": "w-2.5 h-2.5 bg-violet-500 rotate-45 cursor-pointer hover:scale-125 transition-transform absolute top-1/2 -translate-y-1/2 -ml-1.25 shadow-[0_0_8px_rgba(139,92,246,0.6)]"
+    },
+    "canvas": {
+      "background_pattern": "Radial dots (zinc-800) to simulate an editor grid.",
+      "bounding_box": "border border-cyan-500 absolute",
+      "transform_handle": "w-2 h-2 bg-white border border-cyan-500 absolute",
+      "pivot_point": "w-3 h-3 rounded-full border-2 border-violet-500 absolute -ml-1.5 -mt-1.5 cursor-crosshair shadow-[0_0_8px_rgba(139,92,246,0.5)]"
+    }
+  },
+  "motion": {
+    "micro_interactions": "Instant or very fast (100ms) for UI tools to feel responsive. Editor buttons should not have sluggish easing.",
+    "hover_states": "Hover states must strictly increase contrast (e.g., zinc-400 to white text)."
+  },
+  "icons_library": "lucide-react",
+  "media": {
+    "image_urls": [
+      {
+        "url": "https://images.unsplash.com/photo-1741894785509-d87c84bdc275?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1Mjh8MHwxfHNlYXJjaHwxfHxpc29sYXRlZCUyMDJkJTIwY2FydG9vbiUyMGNoYXJhY3RlcnxlbnwwfHx8fDE3NzQ5NTcxMTB8MA&ixlib=rb-4.1.0&q=85",
+        "category": "asset",
+        "description": "Sample isolated character for testing cut tool."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1761815426889-ef76e7fac885?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDN8MHwxfHNlYXJjaHwyfHxjb2xvcmZ1bCUyMHN0aWNrZXIlMjBkZXNpZ24lMjBncmFwaGljfGVufDB8fHx8MTc3NDk1NzExMHww&ixlib=rb-4.1.0&q=85",
+        "category": "asset",
+        "description": "Sample sticker design to upload."
+      }
+    ]
+  },
+  "accessibility": {
+    "contrast": "All text must pass AA contrast against #18181B.",
+    "test_ids": "Enforce data-testid on every timeline track, keyframe, layer item, and toolbar button."
+  },
+  "instructions_to_main_agent": [
+    "Build strictly as a Single Page Editor Application using .js files (no .tsx).",
+    "The layout must be locked to 100vh with overflow-hidden on the main wrapper. Never allow the body itself to scroll.",
+    "Do not use generic Shadcn Card components for the layout panels; use flat divs with 1px border-zinc-800 to explicitly separate the Topbar, Left Panel, Canvas, Right Panel, and Timeline.",
+    "The center canvas is the hero. Use a repeating radial-gradient to create a dot matrix background.",
+    "For the Timeline, map layers dynamically to tracks. Use an absolute positioned playhead over the tracks. Keyframes should be small rotated divs (diamonds) in violet.",
+    "The right panel properties must use a dense 2-column grid for inputs (e.g., Position X and Y side-by-side) with JetBrains Mono text for numerical precision.",
+    "All interactive elements MUST include a data-testid attribute (e.g., data-testid='upload-image-button', data-testid='timeline-play').",
+    "Maintain strict control over 'pointer-events' in the canvas when switching between 'Select/Move' and 'Cut' modes."
+  ]
+}
