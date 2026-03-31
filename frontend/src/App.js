@@ -1,53 +1,95 @@
-import { useEffect } from "react";
-import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
+import React, { useEffect } from 'react';
+import '@/App.css';
+import { EditorProvider, useEditor } from './store/editorStore';
+import TopBar from './components/editor/TopBar';
+import LeftPanel from './components/editor/LeftPanel';
+import Canvas from './components/editor/Canvas';
+import RightPanel from './components/editor/RightPanel';
+import Timeline from './components/editor/Timeline';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+function EditorLayout() {
+  const { state, actions } = useEditor();
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
-
+  // Initialize new project on mount if none exists
   useEffect(() => {
-    helloWorldApi();
-  }, []);
+    if (!state.project.id) {
+      actions.newProject('Untitled Project');
+    }
+  }, [state.project.id, actions]);
+
+  // Handle keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Space bar to play/pause
+      if (e.code === 'Space' && e.target.tagName !== 'INPUT') {
+        e.preventDefault();
+        actions.setTimeline({ isPlaying: !state.timeline.isPlaying });
+      }
+      
+      // Escape to deselect or cancel cut
+      if (e.code === 'Escape') {
+        if (state.tool.active === 'cut') {
+          actions.clearCutPoints();
+          actions.setTool('select');
+        } else {
+          actions.selectLayer(null);
+        }
+      }
+      
+      // Enter to finish cut
+      if (e.code === 'Enter' && state.tool.active === 'cut' && state.tool.cutPoints.length >= 3) {
+        // Trigger cut processing
+        console.log('Finish cut with Enter');
+        actions.clearCutPoints();
+        actions.setTool('select');
+      }
+      
+      // Delete to remove selected layer
+      if ((e.code === 'Delete' || e.code === 'Backspace') && 
+          state.selectedLayerId && 
+          e.target.tagName !== 'INPUT') {
+        e.preventDefault();
+        const layer = state.layers.find(l => l.id === state.selectedLayerId);
+        if (layer && !layer.locked) {
+          actions.removeLayer(state.selectedLayerId);
+        }
+      }
+      
+      // Tool shortcuts
+      if (e.target.tagName !== 'INPUT') {
+        if (e.code === 'KeyV') actions.setTool('select');
+        if (e.code === 'KeyC') actions.setTool('cut');
+        if (e.code === 'KeyP') actions.setTool('pivot');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [state, actions]);
 
   return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
+    <div 
+      className="h-screen w-screen overflow-hidden flex flex-col bg-zinc-950 text-white no-select"
+      data-testid="editor-app"
+    >
+      <TopBar />
+      
+      <div className="flex-1 flex overflow-hidden">
+        <LeftPanel />
+        <Canvas />
+        <RightPanel />
+      </div>
+      
+      <Timeline />
     </div>
   );
-};
+}
 
 function App() {
   return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </div>
+    <EditorProvider>
+      <EditorLayout />
+    </EditorProvider>
   );
 }
 
